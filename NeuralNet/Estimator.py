@@ -35,6 +35,8 @@ from scipy.optimize import fmin_l_bfgs_b as minimize
 import time
 import Error
 import Namer
+import Transfer
+import Init
 #from sklearn.base import BaseEstimator
 
 
@@ -120,50 +122,6 @@ class Layer(object):
     		List of tuples indicating sublayers.
 
     """
-
-class Sublayer(object):
-    """
-    Abstract Neural Layer class. Basic building block of Layer.
-
-    :Parameters:
-        size_in: int
-            Number of inputs (neurons in previous layer)
-        size_out: int
-            Number of outputs (neurons in current layer)        
-        transfer: str
-            transfer function from Transfer
-            examples: "linear","tanh","logistic"
-        depth: int
-        	depth of the layer it belongs to 
-        	(optional; for error reporting)
-    	position: int
-    		position of this sublayer within its parent layer 
-    		(optional; for error reporting)
-    """	
-
-    def __init__(self, size_in, size_out, transfer, depth = None, position = None):
-    	self.id = Namer.sublayer_name(depth,position)
-    	
-    	self.loc = [depth,position]
-    	self.size_in = size_in
-    	self.size_out = size_out
-    	self.w_mat = np.zeros((self.size_in, self.size_out))
-    	self.b_vec = np.zeros(self.size_out)
-    	
-    	self.transfer = Transfer.assign(transfer, self.id)		
-
-		    	
-
-    def feed_forward(self, data):
-        """ Layer simulation step """
-        assert len(inp) == self.ci
-        out = self._step(inp)
-        self.inp = inp
-        self.out = out
-
-    def feed_backward(self, data):
-    	""" Backpropagation step """
-
     def init(self):
         """ Init Layer random values """
         if type(self.initf) is list:
@@ -172,3 +130,75 @@ class Sublayer(object):
         elif self.initf is not None:
             self.initf(self)
 
+
+class Sublayer(object):
+    """
+    Abstract Neural Layer class. Basic building block of Layer.
+
+    :Parameters:
+        transfer: str
+            transfer function from Transfer
+            examples: "linear","tanh","logistic"
+        w_mat: array
+            weight matrix of shape (M,N) 
+        b_vec: array
+            bias vector of shape (N,)         
+        depth: int
+        	depth of the layer it belongs to 
+        	(optional; for error reporting)
+    	position: int
+    		position of this sublayer within its parent layer 
+    		(optional; for error reporting)
+
+    """	
+
+    def __init__(self, transfer, w_mat, b_vec, depth = None, position = None):    	
+        # Sublayer identification attributes
+        self.id = Namer.sublayer_name(depth,position)    	
+    	self.depth = depth
+        self.position = position
+
+        # Sublayer parameter attributes
+    	self.size_in, self.size_out = np.shape(w_mat)
+        if np.shape(b_vec) != (self.size_out,):
+            raise Error.InitError("Param dimension mismatch @ " + self.id)
+    	self.w_mat = w_mat
+    	self.b_vec = b_vec
+    	
+        # Sublayer transfer function
+    	try:
+            self.transfer = Transfer.assign(transfer)
+        except NameError as error:
+            raise Error.InitError(error.message + " in transfer func. assignment @ " + self.id)
+
+    def feed_forward(self, data_in):
+        """ Feed forward step """        
+        func_name = "feed_forward"
+        try:
+            return self.transfer(np.dot(data_in,self.w_mat)+b_vec)    
+        except Exception as error:
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                      
+
+    def backprop(self, delta, data_in = None, data_out = None):
+        """ Backpropagation of deltas """
+        func_name = "backprop"
+        try:
+            return np.dot(delta*self.transfer.deriv(data_in,data_out), self.w_mat.T)
+        except Exception as error:
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)              
+
+    def deriv_w(self, delta, data_in = None, data_out = None):
+        """ Derivative w.r.t. w_mat """        
+        func_name = "deriv_w"
+        try:
+            return np.dot(data_in.T,delta*self.transfer.deriv(data_in,data_out))
+        except Exception as error:
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)
+
+    def deriv_b(self, delta, data_in = None, data_out = None):
+        """ Derivative w.r.t. b_vec """
+        func_name = "deriv_b"
+        try:
+            return np.sum(delta*self.transfer.deriv(data_in,data_out))
+        except Exception as error:
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)

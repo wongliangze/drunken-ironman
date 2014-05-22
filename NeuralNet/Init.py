@@ -25,8 +25,7 @@ def init_param(initer,in_dims,location="unknown location"):
 def random_uniform(in_dims):
 	"""
 	Initialization of matrix
-	indims = (rows,cols)
-
+	in_dims = (rows,cols)
 	"""
 
 	rows,cols = in_dims
