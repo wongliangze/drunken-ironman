@@ -3,7 +3,7 @@ Cost functions are scalar functions that take arrays as arguments.
 """
 
 from Utils import KL,dKL
-
+import numpy as np
 
 """ BASE FUNCTION CLASSES """
 
@@ -71,7 +71,7 @@ class mean_squared_error(layer_function):
 
 	def delta(self, layer, other=0, mask=None):
 		if mask == None:
-			sample_size = np.shape(data_1)[0]
+			sample_size = np.shape(layer)[0]
 		else:
 			sample_size = np.sum(1.-mask,axis=0)
 
@@ -100,7 +100,7 @@ class sparsity_KL(layer_function):
 		else:
 			sample_size = np.sum(1.-mask,axis=0)
 			mask_size = np.shape(mask)[1]
-			return np.sum(KL(np.dot(layer.T,1-mask)/sample_size, sparse_rate))/mask_size
+			return np.sum(KL(np.dot(layer.T,1.-mask)/sample_size, sparse_rate))/mask_size
 
 	def delta(self, layer, sparse_rate, mask = None):
 		if mask == None:
@@ -108,7 +108,11 @@ class sparsity_KL(layer_function):
 		else:
 			sample_size = np.sum(1.-mask,axis=0)
 			mask_size = np.shape(mask)[1]
-			return dKL(np.dot(layer.T,1-mask)/sample_size, sparse_rate)/mask_size		
+			return dKL(np.dot(layer.T,1.-mask)/sample_size, sparse_rate)/mask_size		
 
 class contractive(hybrid_function):
 	pass
+
+class p_norm(layer_function):
+    def __call__(self,layer,p):
+        pass

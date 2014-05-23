@@ -1,10 +1,10 @@
 
 
-def name(input):
-	if input == None:
+def name(location):
+	if location == None:
 		return "unknown"
 	else:
-		return str(depth)
+		return str(location)
 
 def sublayer_name(depth,position):
 	return "Layer " + name(depth) + ", Sublayer " + name(position)

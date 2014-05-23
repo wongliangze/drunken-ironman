@@ -14,17 +14,17 @@ def assign(transfer):
     		Location of layer/sublayer calling this (optional; for error reporting)
 	"""	
 	if transfer == "linear":
-		return identity
+		return identity()
 	elif transfer == "tanh":
-		return tanh
+		return tanh()
 	elif transfer == "logistic":
-		return logistic
-    elif transfer == "softplus":
-        return softplus
+	     return logistic()
+	elif transfer == "softplus":
+	     return softplus()      
 	else:
-		raise NameError("Transfer function not defined/recognized")
+	     raise NameError("Transfer function not defined/recognized")
 
-class identity:
+class identity:    
     """
     Identity transfer function
 
@@ -130,7 +130,7 @@ class softplus:
 
     def inv(self,y):
         """ Inverse of softplus """
-        return np.log(np.exp(x)-1.)
+        return np.log(np.exp(y)-1.)
 
     def deriv(self, x=None, y=None):
         """ Derivative of softplus """

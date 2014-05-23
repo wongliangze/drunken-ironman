@@ -41,7 +41,7 @@ import Init
 #from sklearn.base import BaseEstimator
 
 
-#class Layer(object):
+class Layer(object):
     """
     Abstract Neural Layer class
 
@@ -58,6 +58,7 @@ import Init
     		List of tuples indicating sublayers.
 
     """
+    pass
 
 
 class Sublayer(object):
@@ -80,7 +81,7 @@ class Sublayer(object):
     		(optional; for error reporting)
 
     """	
-
+    
     def __init__(self, transfer, w_mat, b_vec, depth = None, position = None):    	
         # Sublayer identification attributes
         self.id = Namer.sublayer_name(depth,position)    	
@@ -100,19 +101,27 @@ class Sublayer(object):
         except NameError as error:
             raise Error.InitError(error.message + " in transfer func. assignment @ " + self.id)
 
+    def pre_transfer(self, data_in):
+        """ Affine transformation before applying transfer function step """        
+        func_name = "pre_transfer"
+        try:
+            return np.dot(data_in,self.w_mat)+self.b_vec
+        except Exception as error:
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                      
+
     def feed_forward(self, data_in):
         """ Feed forward step """        
         func_name = "feed_forward"
         try:
-            return self.transfer(np.dot(data_in,self.w_mat)+b_vec)    
+            return self.transfer(self.pre_transfer(data_in))    
         except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                      
+            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                        
 
     def backprop(self, delta, data_in = None, data_out = None):
         """ Backpropagation of deltas """
-        func_name = "backprop"
+        func_name = "backprop"        
         try:
-            return np.dot(delta*self.transfer.deriv(data_in,data_out), self.w_mat.T)
+            return np.dot(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), self.w_mat.T)
         except Exception as error:
             raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)              
 
@@ -120,7 +129,7 @@ class Sublayer(object):
         """ Derivative w.r.t. w_mat """        
         func_name = "deriv_w"
         try:
-            return np.dot(data_in.T,delta*self.transfer.deriv(data_in,data_out))
+            return np.dot(data_in.T,delta*self.transfer.deriv(self.pre_transfer(data_in),data_out))
         except Exception as error:
             raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)
 
@@ -128,6 +137,6 @@ class Sublayer(object):
         """ Derivative w.r.t. b_vec """
         func_name = "deriv_b"
         try:
-            return np.sum(delta*self.transfer.deriv(data_in,data_out), axis = 0)
+            return np.sum(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), axis = 0)
         except Exception as error:
             raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)

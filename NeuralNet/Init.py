@@ -29,6 +29,6 @@ def random_uniform(in_dims):
 	"""
 
 	rows,cols = in_dims
-    r = np.sqrt(6)/np.sqrt(rows+cols+1)
-    return random_state.rand(rows,cols)*2*r-r
+ 	r = np.sqrt(6)/np.sqrt(rows+cols+1)
+	return random_state.rand(rows,cols)*2*r-r
 
