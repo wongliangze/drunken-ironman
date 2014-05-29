@@ -1,3 +1,4 @@
+from __future__ import division
 import Error
 import numpy as np
 

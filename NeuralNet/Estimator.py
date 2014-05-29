@@ -85,58 +85,38 @@ class Sublayer(object):
     def __init__(self, transfer, w_mat, b_vec, depth = None, position = None):    	
         # Sublayer identification attributes
         self.id = Namer.sublayer_name(depth,position)    	
-    	self.depth = depth
+        self.depth = depth
         self.position = position
 
         # Sublayer parameter attributes
-    	self.size_in, self.size_out = np.shape(w_mat)        
-        if np.shape(b_vec) != (self.size_out,): # b_vec should be a 1d array i.e. vector
-            raise Error.InitError("Param dimension mismatch @ " + self.id)
+    	self.size_in, self.size_out = np.shape(w_mat)                
     	self.w_mat = w_mat
     	self.b_vec = b_vec
     	
-        # Sublayer transfer function
-    	try:
-            self.transfer = Transfer.assign(transfer)
-        except NameError as error:
-            raise Error.InitError(error.message + " in transfer func. assignment @ " + self.id)
+        # Sublayer transfer function    	
+        self.transfer = Transfer.assign(transfer)        
 
     def pre_transfer(self, data_in):
         """ Affine transformation before applying transfer function step """        
-        func_name = "pre_transfer"
-        try:
-            return np.dot(data_in,self.w_mat)+self.b_vec
-        except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                      
+        #func_name = "pre_transfer"        
+        return np.dot(data_in,self.w_mat)+self.b_vec        
 
     def feed_forward(self, data_in):
         """ Feed forward step """        
-        func_name = "feed_forward"
-        try:
-            return self.transfer(self.pre_transfer(data_in))    
-        except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)                        
+        #func_name = "feed_forward"        
+        return self.transfer(self.pre_transfer(data_in))            
 
     def backprop(self, delta, data_in = None, data_out = None):
         """ Backpropagation of deltas """
-        func_name = "backprop"        
-        try:
-            return np.dot(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), self.w_mat.T)
-        except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)              
+        #func_name = "backprop"                
+        return np.dot(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), self.w_mat.T)        
 
     def deriv_w(self, delta, data_in = None, data_out = None):
         """ Derivative w.r.t. w_mat """        
-        func_name = "deriv_w"
-        try:
-            return np.dot(data_in.T,delta*self.transfer.deriv(self.pre_transfer(data_in),data_out))
-        except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)
-
+        #func_name = "deriv_w"
+        return np.dot(data_in.T,delta*self.transfer.deriv(self.pre_transfer(data_in),data_out))
+        
     def deriv_b(self, delta, data_in = None, data_out = None):
         """ Derivative w.r.t. b_vec """
-        func_name = "deriv_b"
-        try:
-            return np.sum(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), axis = 0)
-        except Exception as error:
-            raise Error.EvalError(error.message + " in execution of " + func_name + " @ " + self.id)
+        #func_name = "deriv_b"
+        return np.sum(delta*self.transfer.deriv(self.pre_transfer(data_in),data_out), axis = 0)        
