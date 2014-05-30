@@ -11,8 +11,6 @@ def assign(transfer):
 	    transfer: str
 	    	Which transfer function to use
 	    	examples: "linear","tanh","logistic","softplus"
-    	location: str
-    		Location of layer/sublayer calling this (optional; for error reporting)
 	"""	
 	if transfer == "linear":
 		return identity()

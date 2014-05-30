@@ -9,6 +9,7 @@ from __future__ import division
 import numpy as np
 import Cost
 import Estimator
+from test_grad import compare_list
 
 def init_random_uniform(hidden_size,visible_size,random_seed=None):
     random_state = np.random.RandomState(random_seed)
@@ -53,8 +54,8 @@ W1,W2,b1,b2 = init_random_uniform(hidden_size,visible_size)
 
 data = np.random.rand(samples,visible_size)
 
-"""
 # Test costgrad_sig_sig
+print "costgrad_sig_sig:"
 def costgrad_sig_sig(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data):
     # 2 layer SAE
     # Transfer functions: Logistic, logistic
@@ -81,8 +82,7 @@ def costgrad_sig_sig(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_wei
     b2grad = np.sum(delta2*data2*(1-data2),axis=0)    
     
     return cost, W1grad,W2grad,b1grad,b2grad
-cost, W1grad0,W2grad0,b1grad0,b2grad0 = costgrad_sig_sig(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data)
-print cost
+costgrad0 = costgrad_sig_sig(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data)
 
 # Sublayer
 layer1 = Estimator.Sublayer("logistic", W1, b1, depth = 0, position = 0)
@@ -96,7 +96,7 @@ data0 = copy(data)
 data1 = layer1.feed_forward(data0)
 data2 = layer2.feed_forward(data1)
 
-print mse(data2,data0) + decay_weight*(decay(layer1.w_mat)+decay(layer2.w_mat)) + sparse_weight*(spa(data1,sparse_rate))
+cost =  mse(data2,data0) + decay_weight*(decay(layer1.w_mat)+decay(layer2.w_mat)) + sparse_weight*(spa(data1,sparse_rate))
 
 delta2 = mse.delta(data2,data0)
 delta1 = layer2.backprop(delta2,data1,data2) + sparse_weight*spa.delta(data1,sparse_rate)
@@ -106,10 +106,14 @@ W1grad = layer1.deriv_w(delta1,data0,data1) + decay_weight*decay.deriv_w(layer1.
 
 b2grad = layer2.deriv_b(delta2,data1,data2)
 b1grad = layer1.deriv_b(delta1,data0,data1)
-"""
 
-"""
+costgrad = (cost,W1grad,W2grad,b1grad,b2grad)
+
+print compare_list(costgrad0,costgrad)
+
+
 # Test costgrad_tanh_tanh
+print "costgrad_tanh_tanh:"
 def costgrad_tanh_tanh(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data):
     visible_size = np.shape(data)[1]
     n_samples = np.shape(data)[0]     
@@ -134,8 +138,7 @@ def costgrad_tanh_tanh(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_w
 
     return cost, W1grad,W2grad,b1grad,b2grad
     
-cost, W1grad0,W2grad0,b1grad0,b2grad0 = costgrad_tanh_tanh(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data)
-print cost
+costgrad0 = costgrad_tanh_tanh(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_weight,data)
 
 # Sublayer
 layer1 = Estimator.Sublayer("tanh", W1, b1, depth = 0, position = 0)
@@ -149,7 +152,7 @@ data0 = copy(data)
 data1 = layer1.feed_forward(data0)
 data2 = layer2.feed_forward(data1)
 
-print mse(data2,data0) + decay_weight*(decay(layer1.w_mat)+decay(layer2.w_mat)) + sparse_weight*(spa(data1,sparse_rate))
+cost =  mse(data2,data0) + decay_weight*(decay(layer1.w_mat)+decay(layer2.w_mat)) + sparse_weight*(spa(data1,sparse_rate))
 
 delta2 = mse.delta(data2,data0)
 delta1 = layer2.backprop(delta2,data1,data2) + sparse_weight*spa.delta(data1,sparse_rate)
@@ -159,9 +162,13 @@ W1grad = layer1.deriv_w(delta1,data0,data1) + decay_weight*decay.deriv_w(layer1.
 
 b2grad = layer2.deriv_b(delta2,data1,data2)
 b1grad = layer1.deriv_b(delta1,data0,data1)
-"""
 
-# Test costgrad_sig_sig
+costgrad = (cost,W1grad,W2grad,b1grad,b2grad)
+
+print compare_list(costgrad0,costgrad)
+
+# Test costgrad_cond_sig_lin
+print "costgrad_cond_sig_lin"
 D = np.zeros(np.shape(W1))
 
 data = data - 0.5
@@ -198,10 +205,9 @@ def costgrad_cond_sig_lin(W1,W2,b1,b2,D,hidden_size,sparse_rate,sparse_weight,de
     b1grad = np.array([np.sum(delta1*data1*(1-data1),axis=0)])
     Dgrad = np.dot((~data.mask).T,delta1*data1*(1-data1))
     
-    return cost1,cost2,cost3,cost4, W1grad,W2grad,b1grad,b2grad,Dgrad
+    return cost1+cost2+cost3+cost4, W1grad,W2grad,b1grad,b2grad,Dgrad
     
-cost01,cost02,cost03, cost04,W1grad0,W2grad0,b1grad0,b2grad0, Dgrad0 = costgrad_cond_sig_lin(W1,W2,b1,b2,D,hidden_size,sparse_rate,sparse_weight,decay_weight,data_masked)
-print cost01,cost02,cost03,cost04
+costgrad0 = costgrad_cond_sig_lin(W1,W2,b1,b2,D,hidden_size,sparse_rate,sparse_weight,decay_weight,data_masked)
 
 # Sublayer
 layer1 = Estimator.Sublayer("logistic", np.concatenate((W1,D),axis=0), b1, depth = 0, position = 0)
@@ -218,7 +224,7 @@ data2 = layer2.feed_forward(data1)
 
 weights = np.concatenate((np.ones(np.shape(W1)),np.zeros(np.shape(D))),axis=0)
 
-print mse(data2,data_masked.filled(0),data_masked.mask), decay_weight/visible_size*decay_w(layer1.w_mat,weights),  decay_weight*decay(layer2.w_mat), sparse_weight*spa(data1,sparse_rate,data_masked.mask)
+cost =  mse(data2,data_masked.filled(0),data_masked.mask) + decay_weight/visible_size*decay_w(layer1.w_mat,weights) + decay_weight*decay(layer2.w_mat) + sparse_weight*spa(data1,sparse_rate,data_masked.mask)
 
 delta2 = mse.delta(data2,data_masked.filled(0),data_masked.mask)
 delta1 = layer2.backprop(delta2,data1,data2) + sparse_weight*spa.delta(data1,sparse_rate,data_masked.mask)
@@ -232,3 +238,6 @@ Dgrad = W1_Dgrad[-visible_size:,:]
 b2grad = layer2.deriv_b(delta2,data1,data2)
 b1grad = layer1.deriv_b(delta1,data0,data1)
 
+costgrad = (cost,W1grad,W2grad,b1grad,b2grad,Dgrad)
+
+print compare_list(costgrad0,costgrad)

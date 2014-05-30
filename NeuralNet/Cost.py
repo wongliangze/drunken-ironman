@@ -5,6 +5,33 @@ from __future__ import division
 from Utils import KL_logistic,dKL_logistic,KL_tanh,dKL_tanh
 import numpy as np
 
+param_func_list = ['DK','DK_weighted']
+layer_func_list = ['MSE','KL_tanh','KL_logistic']
+hybrid_func_list = []
+
+cost_func_list = param_func_list + layer_func_list + hybrid_func_list
+
+def assign(cost):
+    	"""
+	    :Parameters:
+	    cost: str
+	    	Which cost function to use
+	    	examples: 'DK', 'DK_weighted', 'MSE', 'KL_tanh', 'KL_logistic'
+	"""	
+	if cost == "DK":
+		return decay()
+	elif cost == "DK_weighted":
+		return decay_weighted()
+	elif cost == "MSE":
+	    return mean_squared_error()
+	elif cost == "KL_logistic":
+		return sparsity_KL_logistic()
+	elif cost == "KL_tanh":
+		return sparsity_KL_tanh()   
+	else:
+	    raise NameError("Cost function not defined/recognized")
+
+
 """ BASE FUNCTION CLASSES """
 
 class param_function:
@@ -145,7 +172,8 @@ class sparsity_KL_tanh(layer_function):
 		else:
 			sample_size = np.sum(1.-mask,axis=0)
 			mask_size = np.shape(mask)[1]
-			return np.sum(KL_tanh(np.dot(layer.T,1.-mask)/sample_size, sparse_rate))/mask_size
+			weight_mask = (1.-mask)/sample_size
+			return np.sum(KL_tanh(np.dot(weight_mask.T,layer), sparse_rate))/mask_size
 
 	def delta(self, layer, sparse_rate, mask = None):
 		if mask == None:
@@ -154,7 +182,8 @@ class sparsity_KL_tanh(layer_function):
 		else:
 			sample_size = np.sum(1.-mask,axis=0)
 			mask_size = np.shape(mask)[1]
-			return dKL_tanh(np.dot(layer.T,1.-mask)/sample_size, sparse_rate)/(mask_size*sample_size)
+   			weight_mask = (1.-mask)/sample_size  
+			return np.dot(weight_mask, dKL_tanh(np.dot(weight_mask.T,layer), sparse_rate)/mask_size)
 
 class contractive(hybrid_function):
 	pass
