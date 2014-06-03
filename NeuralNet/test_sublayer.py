@@ -7,10 +7,10 @@ Created on Fri May 23 16:00:59 2014
 import numpy as np
 from Estimator import Sublayer
 import Transfer
-from Cost import decay, sparsity_KL, mean_squared_error
+from Cost import decay, sparsity_KL_logistic, mean_squared_error
 
 dc = decay()
-kl = sparsity_KL()
+kl = sparsity_KL_logistic()
 ms = mean_squared_error()
 
 size_0 = 10

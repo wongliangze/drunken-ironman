@@ -12,7 +12,7 @@ def assign(transfer):
 	    	Which transfer function to use
 	    	examples: "linear","tanh","logistic","softplus"
 	"""	
-	if transfer == "linear":
+	if transfer in ["linear",None,"identity"]:
 		return identity()
 	elif transfer == "tanh":
 		return tanh()
