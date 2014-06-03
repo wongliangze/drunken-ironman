@@ -158,8 +158,7 @@ class AffineLayer(object):
 
         elif merge_by_node != None:
             assert False, "merge_by_node not implemented yet"
-
-        self.merge_in = merge_in
+        
         
         start_num_in = np.cumsum([0] + block_sizes_in[:-1])
         start_num_out = np.cumsum([0] + block_sizes_out[:-1])
