@@ -309,7 +309,8 @@ class AffineLayer(object):
             self.blocks_out = [n+range(size) for n,size in zip(start_num_out, block_sizes_out)] 
 
         elif merge_by_node != None:
-            assert False, "merge_by_node not implemented yet"       
+            assert False, "merge_by_node not implemented yet"
+    
                 
     def feed_forward(self, data_in):        
         data_out = np.zeros((len(data_in),self.size_out))
