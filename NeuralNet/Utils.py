@@ -9,7 +9,7 @@ def getfree(param,free):
     else:
         # free is either 1 or 0
         out = list(np.ravel(param)) * free
-    return out,len(out) 
+    return out
 def setfree(param,free,new_param):
     if np.shape(param) == np.shape(free):
         param[free != 0] = new_param

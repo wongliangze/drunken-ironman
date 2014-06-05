@@ -37,11 +37,154 @@ import Error
 import Namer
 import Transfer
 import Init
+import Cost
 
-from Utils import merge_blocks
+from Utils import merge_blocks, getfree, setfree
 
 #from scipy.optimize import fmin_l_bfgs_b as minimize
 #from sklearn.base import BaseEstimator
+
+class Net(object):
+    def __init__():
+        #self.Layers = ?
+        pass
+
+    def evaluate_cost():
+        pass
+
+
+
+class Layer(object):
+    def __init__(self, AffineLayer, TransferLayer, Costs):      
+        """
+        :Parameters:
+            AffineLayer: object
+
+            TransferLayer: object
+
+            Costs: list of dicts
+                each dict with keys 'func', 'weight', 'kwargs','id'
+        """
+        self.AffineLayer = AffineLayer
+        self.TransferLayer = TransferLayer
+        self.Costs = Costs
+        # [{'func': , 'weight':, 'kwargs': 'id': <block_id for layer fcns, affine_id for param fcns> } , {...} ]        
+
+    def get_free_grads():
+        pass       
+
+    def get_free_params():
+        pass
+
+    def set_free_params():
+        pass
+
+    def feed_forward(self,data_in, data_only = True):
+        data_out = self.TransferLayer.feed_forward(
+            self.AffineLayer.feed_forward(
+                data_in))
+        if data_only:
+            return data_out
+        
+        costs_dict = {}
+        costs_sum = 0.
+        for cost in self.Costs:
+            # Specify cost function
+            f = cost['func']
+            if f.type == 'param':
+                # Set up arguments
+                w = self.AffineLayer.affines[cost['id']].w_mat
+                b = self.AffineLayer.affines[cost['id']].b_vec
+                kwargs = cost['kwargs']
+                # Evaluate this component of the cost
+                subcost = cost['weight']*f(w,b,**kwargs)
+                # Return to costs_dict and costs_sum
+                costs_dict[f.name + str(cost['id'])] = subcost
+                costs_sum += subcost
+            elif f.type == 'layer':
+                # Set up arguments
+                layer = data_out[:,self.TransferLayer.blocks[cost['id']]]
+                kwargs = cost['kwargs']
+                # Evaluate this component of the cost
+                subcost = cost['weight']*f(layer,**kwargs)
+                # Return to costs_dict and costs_sum
+                costs_dict[f.name + str(cost['id'])] = subcost
+                costs_sum += subcost
+            else:
+                raise NameError("Cost function not implemented")        
+        return data_out, costs_sum, costs_dict         
+
+    def backprop(self,delta,data_in=None,data_out=None, ravelled=True):
+        if data_in != None:
+            pre_transfer_data = self.AffineLayer.feed_forward(data_in)        
+        else:
+            pre_transfer_data = None      
+
+        post_transfer_delta = delta                
+        # Add deltas from this layer's cost functions
+        for cost in self.Costs:
+            f = cost['func']            
+            if f.type == 'layer':                
+                # Set up arguments
+                kwargs = cost['kwargs']
+                layer = data_out[:,self.TransferLayer.blocks[cost['id']]]
+                                
+                post_transfer_delta[:,self.TransferLayer.blocks[cost['id']]] += cost['weight']*f.delta(layer,**kwargs)               
+            elif f.type == 'param':
+                pass                
+            else:
+                raise NameError("Cost function not implemented")
+        
+        # Backprop through the Transfer layer
+        pre_transfer_delta = self.TransferLayer.backprop(
+            post_transfer_delta,
+            pre_transfer_data,
+            data_out)    
+
+        # Pass delta into derivatives
+        deriv_w = self.AffineLayer.deriv_w(pre_transfer_delta, data_in)
+        deriv_b = self.AffineLayer.deriv_b(pre_transfer_delta)
+
+        # Add derivs from this layer's cost functions
+        for cost in self.Costs:
+            f = cost['func']            
+            if f.type == 'param':
+                # Set up arguments
+                w = self.AffineLayer.affines[cost['id']].w_mat
+                b = self.AffineLayer.affines[cost['id']].b_vec
+                kwargs = cost['kwargs']
+
+                # Add derivative to the respective affine params
+                deriv_w[cost['id']] += cost['weight']*f.deriv_w(w,b,**kwargs)
+                deriv_b[cost['id']] += cost['weight']*f.deriv_b(w,b,**kwargs)
+            elif f.type == 'layer':
+                pass                
+            else:
+                raise NameError("Cost function not implemented")        
+
+        # Backprop through Affine layer
+        prev_delta = self.AffineLayer.backprop(pre_transfer_delta)
+        
+        if ravelled:
+            # only get free portion of derivatives, in a flattened list            
+            free_deriv_w = []
+            free_deriv_b = []
+            len_deriv_w = []
+            len_deriv_b = []
+
+            for affine, dw, db in zip(self.AffineLayer.affines,deriv_w,deriv_b):
+                free_w_grad = getfree(dw,affine.w_free)
+                free_b_grad = getfree(db,affine.b_free)
+                
+                free_deriv_w += free_w_grad
+                free_deriv_b += free_b_grad
+                
+                len_deriv_w += [len(free_w_grad)]
+                len_deriv_b += [len(free_b_grad)]
+
+            return prev_delta, free_deriv_w, free_deriv_b, len_deriv_w, len_deriv_b
+
+        return prev_delta, deriv_w, deriv_b
 
 class TransferLayer(object):
     """
@@ -55,7 +198,7 @@ class TransferLayer(object):
         blocks: list of sublists (optional)
             each sublist specifies which nodes belong in a block of the partition
     """ 
-    def __init__(self,block_size,transfers,blocks=None):
+    def __init__(self,block_sizes,transfers,blocks=None):
         self.size = np.sum(block_sizes)
         self.num_blocks = len(block_sizes)
         self.transfers = [Transfer.assign(f) for f in transfers]
@@ -75,8 +218,8 @@ class TransferLayer(object):
         """ Backpropagation of deltas """ 
         prev_delta = np.zeros_like(delta)        
         for block,f in zip(self.blocks,self.transfers):
-            x = data_in[:,block] if data_in else None
-            y = data_out[:,block] if data_out else None            
+            x = data_in[:,block] if (data_in != None) else None
+            y = data_out[:,block] if (data_out != None) else None            
             prev_delta[:,block] = delta[:,block]*f.deriv(x,y)
         return prev_delta
 
@@ -145,9 +288,9 @@ class AffineLayer(object):
         # Merging
         if merge_by_block != None:
             for merge_set in merge_by_block['in']:
-                assert len(set(block_sizes_in[merge_set])) == 1, "Merged blocks must have same size"
+                assert len(set(block_sizes_in[merge_set])) == 1, "Merged blocks (in) must have same size"
             for merge_set in merge_by_block['out']:
-                assert len(set(block_sizes_out[merge_set])) == 1, "Merged blocks must have same size"
+                assert len(set(block_sizes_out[merge_set])) == 1, "Merged blocks (out) must have same size"
 
             merge_in = merge_blocks(merge_by_block['in'], len(self.affines)) or range(len(self.affines))
             merge_out = merge_blocks(merge_by_block['out'], len(self.affines)) or range(len(self.affines))
@@ -156,20 +299,18 @@ class AffineLayer(object):
             block_sizes_in = [block_sizes_in[merge_in.index(i)] for i in range(max(merge_in) + 1)]            
             block_sizes_out = [block_sizes_out[merge_out.index(i)] for i in range(max(merge_out) +1)]
 
+            start_num_in = np.cumsum([0] + block_sizes_in[:-1])
+            start_num_out = np.cumsum([0] + block_sizes_out[:-1])
+
+            self.size_in = np.sum(block_sizes_in)
+            self.size_out = np.sum(block_sizes_out)            
+            
+            self.blocks_in = [n+range(size) for n,size in zip(start_num_in, block_sizes_in)] 
+            self.blocks_out = [n+range(size) for n,size in zip(start_num_out, block_sizes_out)] 
+
         elif merge_by_node != None:
-            assert False, "merge_by_node not implemented yet"
-
-        self.merge_in = merge_in
-        
-        start_num_in = np.cumsum([0] + block_sizes_in[:-1])
-        start_num_out = np.cumsum([0] + block_sizes_out[:-1])
-
-        self.size_in = np.sum(block_sizes_in)
-        self.size_out = np.sum(block_sizes_out)            
-        
-        self.blocks_in = [n+range(size) for n,size in zip(start_num_in, block_sizes_in)] 
-        self.blocks_out = [n+range(size) for n,size in zip(start_num_out, block_sizes_out)] 
-        
+            assert False, "merge_by_node not implemented yet"       
+                
     def feed_forward(self, data_in):        
         data_out = np.zeros((len(data_in),self.size_out))
         for cxn,affine in zip(self.connections,self.affines):
@@ -189,7 +330,6 @@ class AffineLayer(object):
     def deriv_b(self, delta):
         return [affine.deriv_b(delta[:,self.blocks_out[cxn[1]]])
                 for cxn,affine in zip(self.connections,self.affines)]        
-
 
 class Sublayer(object):
     """
