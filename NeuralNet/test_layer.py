@@ -15,7 +15,7 @@ data_ref = np.random.rand(20,3)
 
 # Affine Layer Params
 W0 = np.random.rand(5,3)
-b0 = 0
+b0 = None
 f0 = {'w_mat':W0,'b_vec' : b0, 'w_free' : np.random.randint(0,2,np.shape(W0))}
 
 W1 = np.random.rand(6,3)
@@ -53,7 +53,11 @@ Layer = Estimator.Layer(AffineLayer,TransferLayer,Costs)
 
 # Run tests
 data_out, costs_sum, costs_dict = Layer.feed_forward(data_in, data_only = False)
-prev_delta, deriv_w, deriv_b, len_deriv_w, len_deriv_b = Layer.backprop(None,data_in=data_in,data_out=data_out, ravelled = True)
+prev_delta, ravelled_grads = Layer.backprop(0,data_in=data_in,data_out=data_out, ravelled = True)
+
+# Get and set free params
+free_params = np.array(Layer.get_free_params())
+Layer.set_free_params(free_params - 0.1*np.array(ravelled_grads))
 
 
 

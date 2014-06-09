@@ -4,35 +4,11 @@ import operator
 
 # HELPER FUNCTIONS
 def getfree(param,free):
-    if np.shape(param) == np.shape(free):
-        out = list(param[free != 0])        
-    else:
-        # free is either 1 or 0
-        out = list(np.ravel(param)) * free
-    return out
+    return list(param[np.ones_like(param)*free != 0.])
+    
 def setfree(param,free,new_param):
-    if np.shape(param) == np.shape(free):
-        param[free != 0] = new_param
-    elif free:
-        # free is 1
-        param[np.ones_like(param) == 1] = np.ravel(new_param)
-
-"""
-def getfree_deriv_w(self,delta,data_in):
-    return getfree(self.deriv_w(delta,data_in),self.w_free)
-def getfree_deriv_b(self,delta):
-    return getfree(self.deriv_b(delta), self.b_free)
-
-def getfree_w(self,):
-    return getfree(self.w_mat,self.w_free)
-def getfree_b(self,):
-    return getfree(self.b_vec,self.b_free)
-
-def setfree_w(self,new_w):
-    setfree(self.w_mat,self.w_free,new_w)        
-def setfree_b(self,new_b):
-    setfree(self.b_vec,self.b_free,new_b)
-"""        
+    param[np.ones_like(param)*free  != 0.] = np.ravel(new_param)
+     
 
 def merge_blocks(merge_list,num_blocks=None):
     if len(merge_list) == 0:
@@ -109,4 +85,10 @@ def dKL_tanh(x,sparse_rate):
     assert np.min((1.+x)*(1.-x) > 0), "Saturated KL computation"
     assert (1.+sparse_rate)*(1. - sparse_rate) > 0, "sparse_rate must be strictly between 0 and 1"
     return -0.5*(1.+sparse_rate)/(1.+x)+0.5*(1.-sparse_rate)/(1.-x)    
+    
+# RAMDOM INIT FUNCTIONS
+def init_random_uniform(size_in,size_out,random_seed=None):
+    random_state = np.random.RandomState(random_seed)
+    r = np.sqrt(6)/np.sqrt(size_in+size_out+1)
+    return random_state.rand(size_in,size_out)*2*r-r
 

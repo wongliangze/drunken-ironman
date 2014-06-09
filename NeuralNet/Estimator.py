@@ -45,7 +45,7 @@ from Utils import merge_blocks, getfree, setfree
 #from sklearn.base import BaseEstimator
 
 class Net(object):
-    def __init__():
+    def __init__(self,):
         #self.Layers = ?
         pass
 
@@ -67,18 +67,40 @@ class Layer(object):
         """
         self.AffineLayer = AffineLayer
         self.TransferLayer = TransferLayer
-        self.Costs = Costs
-        # [{'func': , 'weight':, 'kwargs': 'id': <block_id for layer fcns, affine_id for param fcns> } , {...} ]        
-
-    def get_free_grads():
-        pass       
-
-    def get_free_params():
-        pass
-
-    def set_free_params():
-        pass
-
+        self.Costs = Cost  
+        # [{'func': , 'weight':, 'kwargs': 'id': <block_id for layer fcns, affine_id for param fcns> } , {...} ]         
+                     
+        
+    # Getters and setters
+    def get_free_params(self, ):
+        # only get free portion of parameters, in a flattened list            
+        ravelled_params = []
+        for affine in self.AffineLayer.affines:            
+            ravelled_params += getfree(affine.w_mat,affine.w_free) + getfree(affine.b_vec,affine.b_free)                      
+        return ravelled_params
+    def set_free_params(self, new_params):
+        # Inverse of get_free_params
+        params = np.array(new_params)
+        counter = 0
+        for affine in self.AffineLayer.affines:  
+            num_elems = np.sum(np.ones_like(affine.w_mat)*affine.w_free)
+            setfree(affine.w_mat, affine.w_free, params[counter:counter+num_elems])
+            counter = counter + num_elems           
+    
+    def get_params(self,):
+        return [(affine.w_mat, affine.b_vec, affine.w_free, affine.b_free) for affine in self.AffineLayer.affines]    
+    def get_param(self,affine_id,attr):
+        return getattr(self.AffineLayer.affines[affine_id], attr)
+    def set_param(self,affine_id,attr,new_param):
+        setattr(self.AffineLayer.affines[affine_id], attr, new_param)
+    def get_transfer(self,block_id):
+        return self.TransferLayer.transfer[block_id].func_name
+    def set_transfer(self,block_id,func_name):
+        self.TransferLayer.transfer[block_id].func_name = Transfer.assign(func_name)    
+    def set_cost(self,cost_id,func,weight=1.,kwargs={}):
+        self.Costs.append({'func':func,'weight':weight,'kwargs':kwargs,'id':cost_id})      
+       
+    
     def feed_forward(self,data_in, data_only = True):
         data_out = self.TransferLayer.feed_forward(
             self.AffineLayer.feed_forward(
@@ -164,23 +186,12 @@ class Layer(object):
         prev_delta = self.AffineLayer.backprop(pre_transfer_delta)
         
         if ravelled:
-            # only get free portion of derivatives, in a flattened list            
-            free_deriv_w = []
-            free_deriv_b = []
-            len_deriv_w = []
-            len_deriv_b = []
-
+            ravelled_grads = []
+            
             for affine, dw, db in zip(self.AffineLayer.affines,deriv_w,deriv_b):
-                free_w_grad = getfree(dw,affine.w_free)
-                free_b_grad = getfree(db,affine.b_free)
-                
-                free_deriv_w += free_w_grad
-                free_deriv_b += free_b_grad
-                
-                len_deriv_w += [len(free_w_grad)]
-                len_deriv_b += [len(free_b_grad)]
+                ravelled_grads += getfree(dw,affine.w_free) + getfree(db,affine.b_free)             
 
-            return prev_delta, free_deriv_w, free_deriv_b, len_deriv_w, len_deriv_b
+            return prev_delta, ravelled_grads
 
         return prev_delta, deriv_w, deriv_b
 
@@ -238,12 +249,12 @@ class Affine(object):
 
     """	
     
-    def __init__(self, w_mat, b_vec = None, w_free = 1, b_free = 1):        
-    	self.w_mat = w_mat        
+    def __init__(self, w_mat, b_vec = None, w_free = 1, b_free = 1):
+        self.w_mat = w_mat        
         self.w_free = w_free        
 
         if b_vec == None:
-            self.b_vec = 0
+            self.b_vec = np.zeros(np.shape(w_mat)[1])
             self.b_free = 0
         else:
             self.b_vec = b_vec
