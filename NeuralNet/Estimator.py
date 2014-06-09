@@ -114,13 +114,11 @@ class Layer(object):
                 raise NameError("Cost function not implemented")        
         return data_out, costs_sum, costs_dict         
 
-    def backprop(self,delta,data_in=None,data_out=None, ravelled=True):
-        if data_in != None:
-            pre_transfer_data = self.AffineLayer.feed_forward(data_in)        
-        else:
-            pre_transfer_data = None      
-
-        post_transfer_delta = delta                
+    def backprop(self,delta,data_in,data_out, ravelled=True):        
+        pre_transfer_data = self.AffineLayer.feed_forward(data_in)                        
+        # delta might be a scalar (e.g. 0) or a matrix of the same shape as data_out
+        post_transfer_delta = np.ones(np.shape(data_out))*delta 
+        
         # Add deltas from this layer's cost functions
         for cost in self.Costs:
             f = cost['func']            
@@ -282,11 +280,14 @@ class AffineLayer(object):
         self.affines = [Affine(**kwargs) for kwargs in affine_kwargs]        
         self.connections = [[i,i] for i in range(len(self.affines))]
 
-        block_sizes_in = np.array([np.shape(affine.w_mat)[0] for affine in self.affines])
-        block_sizes_out = np.array([np.shape(affine.w_mat)[1] for affine in self.affines])
+        block_sizes_in = [np.shape(affine.w_mat)[0] for affine in self.affines]
+        block_sizes_out = [np.shape(affine.w_mat)[1] for affine in self.affines]
 
         # Merging
         if merge_by_block != None:
+            block_sizes_in = np.array(block_sizes_in)
+            block_sizes_out = np.array(block_sizes_out)
+            
             for merge_set in merge_by_block['in']:
                 assert len(set(block_sizes_in[merge_set])) == 1, "Merged blocks (in) must have same size"
             for merge_set in merge_by_block['out']:
@@ -298,21 +299,20 @@ class AffineLayer(object):
             self.connections = [ [merge_in[io[0]], merge_out[io[1]]] for io in self.connections]
             block_sizes_in = [block_sizes_in[merge_in.index(i)] for i in range(max(merge_in) + 1)]            
             block_sizes_out = [block_sizes_out[merge_out.index(i)] for i in range(max(merge_out) +1)]
-
-            start_num_in = np.cumsum([0] + block_sizes_in[:-1])
-            start_num_out = np.cumsum([0] + block_sizes_out[:-1])
-
-            self.size_in = np.sum(block_sizes_in)
-            self.size_out = np.sum(block_sizes_out)            
-            
-            self.blocks_in = [n+range(size) for n,size in zip(start_num_in, block_sizes_in)] 
-            self.blocks_out = [n+range(size) for n,size in zip(start_num_out, block_sizes_out)] 
-
+        
         elif merge_by_node != None:
-            assert False, "merge_by_node not implemented yet"
-    
+            assert False, "merge_by_node not implemented yet"        
+                    
+        start_num_in = np.cumsum([0] + block_sizes_in[:-1])
+        start_num_out = np.cumsum([0] + block_sizes_out[:-1])
+
+        self.size_in = np.sum(block_sizes_in)
+        self.size_out = np.sum(block_sizes_out)            
+        
+        self.blocks_in = [n+range(size) for n,size in zip(start_num_in, block_sizes_in)] 
+        self.blocks_out = [n+range(size) for n,size in zip(start_num_out, block_sizes_out)]     
                 
-    def feed_forward(self, data_in):        
+    def feed_forward(self, data_in):    
         data_out = np.zeros((len(data_in),self.size_out))
         for cxn,affine in zip(self.connections,self.affines):
             data_out[:,self.blocks_out[cxn[1]]] += affine.feed_forward(data_in[:,self.blocks_in[cxn[0]]])
