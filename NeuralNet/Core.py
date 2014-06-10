@@ -241,34 +241,74 @@ def CostWrapper(object):
             Index of block_out that it takes as input argument
         affine_input: pair of int
             Indexes of (block_in, block_out)
-        kwargs: dict
-            Additional inputs for cost function            
+        xparams: dict
+            Additional parameters for cost functiob (e.g. sparse rate)
     """
-    def __init__(self, layer, func_name, weight = 1., layer_id = None, affine_id = None, kwargs = None):
-        self.name = func_name
+    def __init__(self, func_name, weight = 1., layer_id = None, in_id = None, out_id = None, xparams = None):
+        self.name = '{}.{}.{} {}'.format(layer_id or '', in_id or '', out_id or '', func_name)
         self.func = Cost.assign(func_name)
         self.type = self.func.type        
         
         self.weight = weight
-        self.block_in_id = layer_id
-        self.block_out_id = affine_id
-        self.kwargs = kwargs
+        self.layer_id = layer_id
+        self.in_id = in_id
+        self.out_id = out_id
+        self.xparams = xparams or {}
     
-    def __call__(self, kwargs=None):
+    def __call__(self, parent_layer, layer_data = None, xkwargs = None):
+        """
+        :Parameters:
+            parent_layer: Layer object
+                Layer on which this cost function is defined.
+            layer_data: array
+                Data for layer functions.
+            xkwargs: dict
+                Extra kwargs.
+        """
         if self.type == 'param':
             # Set up arguments
-            affine_id = parent_layer.AffineLayer.affine_idx[self.affine_input[0],self.affine_input[1]]
+            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id,self.out_id]
             affine = parent_layer.AffineLayer.affines[affine_id]
             w = affine.w_mat
-            b = affine.b_vec            
+            b = affine.b_vec
+            kwargs = xkwargs or {}
+            kwargs.update(self.xparams)
             # Evaluate this component of the cost
-            return self.weight * self.func(w,b,**kwargs)
+            return self.weight * self.func(w,b, **kwargs)
         elif self.type == 'layer':
             # Set up arguments
-            block = parent_layer.TransferLayer.blocks[self.layer_id]
-            layer = layer_data[:,block]            
+            block = parent_layer.TransferLayer.blocks[self.out_id]                      
+            layer = layer_data[:,block]
+            kwargs = xkwargs or {}
+            kwargs.update(self.xparams)
             # Evaluate this component of the cost
             return self.weight * self.func(layer,**kwargs)
         else:
-            raise NameError("Cost function not implemented")                
-        
+            raise NameError("Cost function not implemented")      
+    
+    def delta(self, parent_layer, layer_data = None, xkwargs = None):
+        if 'delta' in dir(self.func):
+            # Set up arguments
+            block = parent_layer.TransferLayer.blocks[self.out_id]                      
+            layer = layer_data[:,block]
+            kwargs = xkwargs or {}
+            kwargs.update(self.xparams)
+            # Evaluate this component of the gradient
+            return self.weight * self.func.delta(layer, **kwargs)
+        else:
+            return 0.
+    
+    def deriv_wb(self, parent_layer, layer_data = None, xkwargs = None):
+        if 'deriv_w' in dir(self.func):
+            # Set up arguments
+            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id,self.out_id]
+            affine = parent_layer.AffineLayer.affines[affine_id]
+            w = affine.w_mat
+            b = affine.b_vec
+            kwargs = xkwargs or {}
+            kwargs.update(self.xparams)
+            return self.weight * self.func.deriv_w(w,b,**kwargs), self.weight * self.func.deriv_b(w,b,**kwargs)
+        else:
+            return 0.
+    
+            
