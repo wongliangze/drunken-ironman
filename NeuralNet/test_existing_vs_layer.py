@@ -52,7 +52,7 @@ hidden_size = 2
 visible_size = 4
 samples = 6
 
-sparse_rate = 0.5
+sparse_rate = 0.1
 sparse_weight = 0.
 decay_weight = 0.
 

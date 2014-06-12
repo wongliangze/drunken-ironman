@@ -67,7 +67,7 @@ class Layer(object):
         """
         self.AffineLayer = AffineLayer
         self.TransferLayer = TransferLayer
-        self.Costs = Cost  
+        self.Costs = Costs  
         # [{'func': , 'weight':, 'kwargs': 'id': <block_id for layer fcns, affine_id for param fcns> } , {...} ]         
                      
         

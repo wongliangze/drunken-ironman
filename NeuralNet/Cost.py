@@ -102,112 +102,112 @@ class mean_squared_error(layer_function):
 	def __init__(self):
 		super(mean_squared_error,self).__init__()
 		self.name = "MSE"	
-	def __call__(self, layer, other=0, mask = None):
+	def __call__(self, layer_data, Target_data = 0, Target_mask = None, *args, **kwargs):
 		"""
 		:Parameters:
-			layer: ndarray
-				original layer, to which this function belongs
-			other: ndarray; broadcastable with layer
+			layer_data: ndarray
+				original layer_data, to which this function belongs
+			Target_data: ndarray; broadcastable with layer_data
 				data for comparison
-			mask: ndarray
+			Target_mask: ndarray
 				binary values
 				0 or False  : not missing
 				1 or True	: missing				
 		"""
-		if mask == None:
-			sample_size = np.shape(layer)[0]
-			mask = 0.
+		if Target_mask is None:
+			sample_size = np.shape(layer_data)[0]
+			Target_mask = 0.
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
+			sample_size = np.sum(1.-Target_mask,axis=0)
 
-		return np.sum(np.sum(0.5 * (1.-mask)*(layer - other)**2,axis=0)/sample_size)		
+		return np.sum(np.sum(0.5 * (1.-Target_mask)*(layer_data - Target_data)**2,axis=0)/sample_size)		
 
-	def delta(self, layer, other=0, mask=None):
-		if mask == None:
-			sample_size = np.shape(layer)[0]
-			mask = 0.
+	def delta(self, layer_data, Target_data = 0, Target_mask=None, *args, **kwargs):
+		if Target_mask is None:
+			sample_size = np.shape(layer_data)[0]
+			Target_mask = 0.
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
+			sample_size = np.sum(1.-Target_mask,axis=0)
 
-		return (1.-mask)*(layer - other)/sample_size
+		return (1.-Target_mask)*(layer_data - Target_data)/sample_size
 
 class sparsity_KL_logistic(layer_function):
 	def __init__(self):
 		super(sparsity_KL_logistic,self).__init__()
 		self.name = "KL_logistic"	
-	def __call__(self, layer, sparse_rate, mask = None):
+	def __call__(self, layer_data, sparse_rate, Input_mask = None, *args, **kwargs):
 		"""
 		:Parameters:
-			layer: ndarray
-				original layer, to which this function belongs
+			layer_data: ndarray
+				original layer_data, to which this function belongs
 			sparse_rate: float
 				targetted sparse rate
-			mask: ndarray
+			Input_mask: ndarray
 				binary values
 				0 or False  : not missing
 				1 or True	: missing	
 
-		Unmasked versions are equivalent to the masked versions with the following assignments:
-			sample_size = np.shape(layer)[0]			
-			mask_size = 1.
-			mask = np.ones((sample_size,1))
+		UnInput_masked versions are equivalent to the Input_masked versions with the following assignments:
+			sample_size = np.shape(layer_data)[0]			
+			Input_mask_size = 1.
+			Input_mask = np.ones((sample_size,1))
 		"""
-		if mask == None:			
-			return np.sum(KL_logistic(np.mean(layer,axis=0),sparse_rate))
+		if Input_mask is None:			
+			return np.sum(KL_logistic(np.mean(layer_data,axis=0),sparse_rate))
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
-			mask_size = np.shape(mask)[1]
-			weight_mask = (1.-mask)/sample_size
-			return np.sum(KL_logistic(np.dot(weight_mask.T,layer), sparse_rate))/mask_size
+			sample_size = np.sum(1.-Input_mask,axis=0)
+			Input_mask_size = np.shape(Input_mask)[1]
+			weight_Input_mask = (1.-Input_mask)/sample_size
+			return np.sum(KL_logistic(np.dot(weight_Input_mask.T,layer_data), sparse_rate))/Input_mask_size
 
-	def delta(self, layer, sparse_rate, mask = None):
-		if mask == None:
-			sample_size = np.shape(layer)[0]
-			return np.outer(np.ones(sample_size),dKL_logistic(np.mean(layer,axis=0),sparse_rate)/sample_size)
+	def delta(self, layer_data, sparse_rate, Input_mask = None, *args, **kwargs):
+		if Input_mask is None:
+			sample_size = np.shape(layer_data)[0]
+			return np.outer(np.ones(sample_size),dKL_logistic(np.mean(layer_data,axis=0),sparse_rate)/sample_size)
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
-			mask_size = np.shape(mask)[1]
-			weight_mask = (1.-mask)/sample_size                 
-			return np.dot(weight_mask, dKL_logistic(np.dot(weight_mask.T,layer), sparse_rate)/mask_size)
+			sample_size = np.sum(1.-Input_mask,axis=0)
+			Input_mask_size = np.shape(Input_mask)[1]
+			weight_Input_mask = (1.-Input_mask)/sample_size                 
+			return np.dot(weight_Input_mask, dKL_logistic(np.dot(weight_Input_mask.T,layer_data), sparse_rate)/Input_mask_size)
 
 class sparsity_KL_tanh(layer_function):
 	def __init__(self):
 		super(sparsity_KL_tanh,self).__init__()
 		self.name = "KL_tanh"	
-	def __call__(self, layer, sparse_rate, mask = None):
+	def __call__(self, layer_data, sparse_rate, Input_mask = None, *args, **kwargs):
 		"""
 		:Parameters:
-			layer: ndarray
-				original layer, to which this function belongs
+			layer_data: ndarray
+				original layer_data, to which this function belongs
 			sparse_rate: float
 				targetted sparse rate
-			mask: ndarray
+			Input_mask: ndarray
 				binary values
 				0 or False  : not missing
 				1 or True	: missing	
 
-		Unmasked versions are equivalent to the masked versions with the following assignments:
-			sample_size = np.shape(layer)[0]			
-			mask_size = 1.
-			mask = np.ones((sample_size,1))
+		UnInput_masked versions are equivalent to the Input_masked versions with the following assignments:
+			sample_size = np.shape(layer_data)[0]			
+			Input_mask_size = 1.
+			Input_mask = np.ones((sample_size,1))
 		"""
-		if mask == None:			
-			return np.sum(KL_tanh(np.mean(layer,axis=0),sparse_rate))
+		if Input_mask is None:			
+			return np.sum(KL_tanh(np.mean(layer_data,axis=0),sparse_rate))
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
-			mask_size = np.shape(mask)[1]
-			weight_mask = (1.-mask)/sample_size
-			return np.sum(KL_tanh(np.dot(weight_mask.T,layer), sparse_rate))/mask_size
+			sample_size = np.sum(1.-Input_mask,axis=0)
+			Input_mask_size = np.shape(Input_mask)[1]
+			weight_Input_mask = (1.-Input_mask)/sample_size
+			return np.sum(KL_tanh(np.dot(weight_Input_mask.T,layer_data), sparse_rate))/Input_mask_size
 
-	def delta(self, layer, sparse_rate, mask = None):
-		if mask == None:			
-			sample_size = np.shape(layer)[0]
-			return np.outer(np.ones(sample_size),dKL_tanh(np.mean(layer,axis=0),sparse_rate)/sample_size)
+	def delta(self, layer_data, sparse_rate, Input_mask = None, *args, **kwargs):
+		if Input_mask is None:			
+			sample_size = np.shape(layer_data)[0]
+			return np.outer(np.ones(sample_size),dKL_tanh(np.mean(layer_data,axis=0),sparse_rate)/sample_size)
 		else:
-			sample_size = np.sum(1.-mask,axis=0)
-			mask_size = np.shape(mask)[1]
-   			weight_mask = (1.-mask)/sample_size  
-			return np.dot(weight_mask, dKL_tanh(np.dot(weight_mask.T,layer), sparse_rate)/mask_size)
+			sample_size = np.sum(1.-Input_mask,axis=0)
+			Input_mask_size = np.shape(Input_mask)[1]
+   			weight_Input_mask = (1.-Input_mask)/sample_size  
+			return np.dot(weight_Input_mask, dKL_tanh(np.dot(weight_Input_mask.T,layer_data), sparse_rate)/Input_mask_size)
 
 class contractive(hybrid_function):
 	pass

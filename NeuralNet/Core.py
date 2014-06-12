@@ -9,8 +9,10 @@ from __future__ import division
 import numpy as np
 import itertools
 
-from Utils import init_random_uniform
+
 import Cost
+import Transfer
+from Utils import init_random_uniform, getfree, setfree, None2Blank
 
 class Affine(object):
     """
@@ -158,6 +160,8 @@ class AffineLayer(object):
     
     def get_affine_props(self, attr):
         """
+        Get properties of affine layer.
+        
         :Parameters:
             attr: string
                 'w_mat', 'b_vec', 'w_free', 'b_free'
@@ -195,7 +199,7 @@ class TransferLayer(object):
     """ 
     def __init__(self, blocks, transfers):
         self.blocks = blocks
-        self.transfers = transfers
+        self.transfers = [Transfer.assign(f) for f in transfers]
         
         self.size = max(max(blocks))+1
         self.block_sizes = [len(block) for block in blocks]
@@ -229,86 +233,232 @@ class TransferLayer(object):
             prev_delta[:,block] = delta[:,block]*f.deriv(x,y)
         return prev_delta                  
 
-def CostWrapper(object):    
+class CostWrapper(object):    
     """
     Cost functions and their parameters.
     :Parameters:
-        func_name: string
+        name: string
             Name of cost function
         weight: float
             Weightage of this cost component
-        layer_input: int
-            Index of block_out that it takes as input argument
-        affine_input: pair of int
-            Indexes of (block_in, block_out)
+        layer_id: int
+            Id of parent layer
+        in_id, out_id: int
+            Id of input and output blocks of affine layer
+        input_block, target_block: list of int
+            Indexes of input and target blocks required
         xparams: dict
             Additional parameters for cost functiob (e.g. sparse rate)
     """
-    def __init__(self, func_name, weight = 1., layer_id = None, in_id = None, out_id = None, xparams = None):
-        self.name = '{}.{}.{} {}'.format(layer_id or '', in_id or '', out_id or '', func_name)
-        self.func = Cost.assign(func_name)
+    def __init__(self, name, weight = 1., layer_id = None, in_id = None, out_id = None, input_block = None, target_block = None, xparams = None):        
+        self.name = '{}.{}.{} {}'.format(*None2Blank([layer_id, in_id, out_id, name]))
+        self.func = Cost.assign(name)
         self.type = self.func.type        
         
         self.weight = weight
         self.layer_id = layer_id
         self.in_id = in_id
         self.out_id = out_id
-        self.xparams = xparams or {}
+        self.input_block = input_block
+        self.target_block = target_block
+        self.xparams = xparams or {}    
     
-    def __call__(self, parent_layer, layer_data = None, xkwargs = None):
+    def compute(self, parent_layer, layer_data, **input_target_kwargs):
         """
         :Parameters:
             parent_layer: Layer object
                 Layer on which this cost function is defined.
             layer_data: array
-                Data for layer functions.
-            xkwargs: dict
-                Extra kwargs.
+                Data from current layer
+            **input_target_kwargs: keyed args from the following list
+                Input_data, Input_mask, Target_data, Target_mask
         """
         if self.type == 'param':
             # Set up arguments
-            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id,self.out_id]
+            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id][self.out_id]
+            if affine_id is None:
+                raise NameError('Cannot apply cost ({}) to non-existing connection'.format(self.name))
             affine = parent_layer.AffineLayer.affines[affine_id]
             w = affine.w_mat
             b = affine.b_vec
-            kwargs = xkwargs or {}
-            kwargs.update(self.xparams)
+            kwargs = self.xparams
             # Evaluate this component of the cost
             return self.weight * self.func(w,b, **kwargs)
-        elif self.type == 'layer':
-            # Set up arguments
-            block = parent_layer.TransferLayer.blocks[self.out_id]                      
-            layer = layer_data[:,block]
-            kwargs = xkwargs or {}
+        elif self.type == 'layer':            
+            # Set up arguments            
+            layer_block = parent_layer.TransferLayer.blocks[self.out_id]
+            kwargs = {}
+            keys = ['Input_data', 'Input_mask', 'Target_data', 'Target_mask']
+            blocks = ['input_block', 'input_block', 'target_block', 'target_block']
+            for key,block in zip(keys,blocks):
+                if input_target_kwargs.has_key(key):
+                    if input_target_kwargs[key] is not None:                        
+                        if getattr(self,block) is not None:
+                            kwargs[key] = input_target_kwargs[key][:,getattr(self,block)]
+                        else:
+                            kwargs[key] = input_target_kwargs[key]
             kwargs.update(self.xparams)
             # Evaluate this component of the cost
-            return self.weight * self.func(layer,**kwargs)
+            return self.weight * self.func(layer_data[:,layer_block], **kwargs)
         else:
             raise NameError("Cost function not implemented")      
     
-    def delta(self, parent_layer, layer_data = None, xkwargs = None):
+    def delta(self, parent_layer, layer_data = None, **input_target_kwargs):
         if 'delta' in dir(self.func):
             # Set up arguments
-            block = parent_layer.TransferLayer.blocks[self.out_id]                      
-            layer = layer_data[:,block]
-            kwargs = xkwargs or {}
-            kwargs.update(self.xparams)
+            layer_block = parent_layer.TransferLayer.blocks[self.out_id]
+            kwargs = {}
+            keys = ['Input_data', 'Input_mask', 'Target_data', 'Target_mask']
+            blocks = ['input_block', 'input_block', 'target_block', 'target_block']
+            for key,block in zip(keys,blocks):
+                if input_target_kwargs.has_key(key):
+                    if input_target_kwargs[key] is not None:                        
+                        if getattr(self,block) is not None:
+                            kwargs[key] = input_target_kwargs[key][:,getattr(self,block)]
+                        else:
+                            kwargs[key] = input_target_kwargs[key]
+            kwargs.update(self.xparams)            
             # Evaluate this component of the gradient
-            return self.weight * self.func.delta(layer, **kwargs)
+            return self.weight * self.func.delta(layer_data[:,layer_block], **kwargs)
         else:
             return 0.
     
-    def deriv_wb(self, parent_layer, layer_data = None, xkwargs = None):
-        if 'deriv_w' in dir(self.func):
+    def deriv_wb(self, parent_layer):
+        if ('deriv_w' in dir(self.func)) and ('deriv_b' in dir(self.func)):
             # Set up arguments
-            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id,self.out_id]
+            affine_id = parent_layer.AffineLayer.affine_idx[self.in_id][self.out_id]
             affine = parent_layer.AffineLayer.affines[affine_id]
             w = affine.w_mat
             b = affine.b_vec
-            kwargs = xkwargs or {}
-            kwargs.update(self.xparams)
+            kwargs = self.xparams
             return self.weight * self.func.deriv_w(w,b,**kwargs), self.weight * self.func.deriv_b(w,b,**kwargs)
         else:
-            return 0.
-    
+            return 0.,0.
             
+
+class Layer(object):
+    def __init__(self, AffineLayer, TransferLayer, Costs, layer_id = None):      
+        """
+        :Parameters:
+            AffineLayer: object
+
+            TransferLayer: object
+
+            Costs: list of CostWrapper objects
+        """
+        self.AffineLayer = AffineLayer
+        self.TransferLayer = TransferLayer
+        self.Costs = Costs
+        self.id = layer_id
+
+    @classmethod
+    def init_by_size(cls, block_sizes_in, block_sizes_out, transfers, cost_params, 
+                     connections = None, complete = False,
+                     mtds = None, w_frees = None, b_frees = None,
+                     random_seed = None, layer_id = None):
+        affine = AffineLayer.init_by_size(block_sizes_in, block_sizes_out, connections, complete, mtds, w_frees, b_frees, random_seed)
+        transfer = TransferLayer.init_by_size(block_sizes_out,transfers)               
+        cost_list = []
+        for param in cost_params:    
+            param['layer_id'] = layer_id
+            if not param.has_key('target_block'):
+                param['target_block'] = affine.blocks_out[param['out_id']]                
+            cost_list.append(CostWrapper(**param))
+        return cls(affine,transfer,cost_list,layer_id)
+
+    def get_free_params(self, ):
+        # only get free portion of parameters, in a flattened list            
+        ravelled_params = []
+        for affine in self.AffineLayer.affines:            
+            ravelled_params += getfree(affine.w_mat,affine.w_free) + getfree(affine.b_vec,affine.b_free)                      
+        return ravelled_params
+    def set_free_params(self, new_params):
+        # Inverse of get_free_params
+        params = np.array(new_params)
+        counter = 0
+        for affine in self.AffineLayer.affines:  
+            num_elems = np.sum(np.ones_like(affine.w_mat)*affine.w_free)
+            setfree(affine.w_mat, affine.w_free, params[counter:counter+num_elems])
+            counter = counter + num_elems      
+            
+    def get_affine_props(self, attr):
+        """
+        Get properties of affine layer.
+        
+        :Parameters:
+            attr: string
+                'w_mat', 'b_vec', 'w_free', 'b_free'
+        """
+        return [getattr(affine,attr) for affine in self.AffineLayer.affines]    
+    def get_cost_props(self,attr):
+        """
+        Get properties of costs defined on this layer.
+        
+        :Parameters:
+            attr: string
+                e.g. 'name', 'type', 'weight', 'xparams'
+        """
+        return [getattr(cost,attr) for cost in self.Costs]
+    def get_transfer_props(self,attr):
+        """
+        Get properties of transfer functions.
+        
+        :Parameters:
+            attr: string
+                e.g. 'block_sizes', 'blocks', 'transfers'                   
+        """
+        return [getattr(transfer,attr) for transfer in self.TransferLayer.transfers]
+        
+    def feed_forward(self,data_in, data_only = True, **input_target_kwargs):
+        data_out = self.TransferLayer.feed_forward(
+            self.AffineLayer.feed_forward(
+                data_in))
+        if data_only:
+            return data_out
+        
+        costs_dict = {}
+        costs_sum = 0.
+        for cost in self.Costs:
+            subcost = cost.compute(self, data_out, **input_target_kwargs)
+            costs_dict[cost.name] = subcost
+            costs_sum += subcost
+        return data_out, costs_sum, costs_dict         
+
+    def backprop(self,delta,data_in,data_out, ravelled=True, **input_target_kwargs):        
+        pre_transfer_data = self.AffineLayer.feed_forward(data_in)                        
+        # delta might be a scalar (e.g. 0) or a matrix of the same shape as data_out
+        post_transfer_delta = np.ones(np.shape(data_out))*delta         
+        
+        # Add deltas from this layer's cost functions        
+        for cost in self.Costs:
+            post_transfer_delta[:,self.TransferLayer.blocks[cost.out_id]] += cost.delta(self, data_out, **input_target_kwargs)
+
+        # Backprop through the Transfer layer
+        pre_transfer_delta = self.TransferLayer.backprop(
+            post_transfer_delta,
+            pre_transfer_data,
+            data_out)    
+
+        # Pass delta into derivatives
+        deriv_w = self.AffineLayer.deriv_w(pre_transfer_delta, data_in)
+        deriv_b = self.AffineLayer.deriv_b(pre_transfer_delta)
+
+        # Add derivs from this layer's cost functions
+        for cost in self.Costs:
+            if (cost.in_id is not None) and (cost.out_id is not None):
+                dw, db = cost.deriv_wb(self)                
+                # Add derivative to the respective affine params
+                affine_id = self.AffineLayer.affine_idx[cost.in_id][cost.out_id]                            
+                deriv_w[affine_id] += dw
+                deriv_b[affine_id] += db
+
+        # Backprop through Affine layer
+        prev_delta = self.AffineLayer.backprop(pre_transfer_delta)
+        
+        if ravelled:
+            ravelled_grads = []            
+            for affine, dw, db in zip(self.AffineLayer.affines,deriv_w,deriv_b):
+                ravelled_grads += getfree(dw,affine.w_free) + getfree(db,affine.b_free)             
+            return prev_delta, ravelled_grads
+
+        return prev_delta, deriv_w, deriv_b

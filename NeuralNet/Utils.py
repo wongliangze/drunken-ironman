@@ -91,4 +91,9 @@ def init_random_uniform(size_in,size_out,random_seed=None):
     random_state = np.random.RandomState(random_seed)
     r = np.sqrt(6)/np.sqrt(size_in+size_out+1)
     return random_state.rand(size_in,size_out)*2*r-r
+    
+# STRING PROCESSING FUNCTIONS
+def None2Blank(inlist):
+    return [('' if elm is None else elm) for elm in inlist]
+    
 
