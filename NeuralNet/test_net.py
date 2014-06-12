@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed May 28 17:32:18 2014
+Created on Thu Jun 12 11:31:51 2014
 
 @author: Liang Ze
 """
@@ -9,7 +9,6 @@ from __future__ import division
 import numpy as np
 import Core
 
-# Parameters
 hidden_size = 2
 visible_size = 7
 samples = 50
@@ -18,25 +17,28 @@ sparse_rate = 0.1
 sparse_weight = 0.5
 decay_weight = 0.6
 
-data = np.random.rand(samples,visible_size)
+
+Input_data = np.random.rand(samples,visible_size)
+Target_data = Input_data
+
 
 costs0 = [    
     {'name': 'DK',  'weight':decay_weight, 'in_id': 0, 'out_id':0},    
     {'name': 'KL_logistic', 'weight': sparse_weight, 'out_id':0, 'xparams':{'sparse_rate':sparse_rate}},    
 ]
-layer0 = Core.Layer.init_by_size([visible_size], [hidden_size],'logistic',costs0, layer_id = 0)                     
-
 costs1 = [
     {'name': 'MSE', 'weight': 1., 'out_id': 0},
     {'name': 'DK',  'weight':decay_weight, 'in_id': 0, 'out_id':0},
 ]
-layer1 = Core.Layer.init_by_size([hidden_size], [visible_size],'logistic',costs1, layer_id = 1)                     
 
-data0, cost_sum0, cost_dict0 = layer0.feed_forward(data,data_only=False,  Target_data = data)
-data1, cost_sum1, cost_dict1 = layer1.feed_forward(data0, data_only=False,  Target_data = data)
-prev_delta1, deriv_w1, deriv_b1 = layer1.backprop(0, data0, data1, ravelled = False, Target_data = data)
-prev_delta0, deriv_w0, deriv_b0 = layer0.backprop(prev_delta1, data, data0, ravelled = False, Target_data = data)
-costgrad = [cost_sum0 + cost_sum1, deriv_w0, deriv_w1, deriv_b0, deriv_b1]
+net = Core.Net.init_by_size([[visible_size],[hidden_size],[visible_size]],'logistic',[costs0, costs1])
+
+cost_dict = net.cost_breakdown(Input_data, Target_data)
+cost,grad = net.costgrad(Input_data,Target_data, cost_only=False)
+
+params = net.get_free_params()
+net.set_free_params(params*0)
+new_params = net.get_free_params()
 
 
 def sigmoid(x):
@@ -80,8 +82,13 @@ def costgrad_sig_sig(W1,W2,b1,b2,hidden_size,sparse_rate,sparse_weight,decay_wei
     b2grad = np.sum(delta2*data2*(1-data2),axis=0)    
     
     return cost, W1grad,W2grad,b1grad,b2grad
-W0 = layer0.get_affine_props('w_mat')[0]
-W1 = layer1.get_affine_props('w_mat')[0]
-b0 = layer0.get_affine_props('b_vec')[0]
-b1 = layer1.get_affine_props('b_vec')[0]
-costgrad0 = costgrad_sig_sig(W0,W1,b0,b1,hidden_size,sparse_rate,sparse_weight,decay_weight,data)
+W0 = net.Layers[0].get_affine_props('w_mat')[0]
+W1 = net.Layers[1].get_affine_props('w_mat')[0]
+b0 = net.Layers[0].get_affine_props('b_vec')[0]
+b1 = net.Layers[1].get_affine_props('b_vec')[0]
+cost0, W0grad, W1grad, b0grad, b1grad = costgrad_sig_sig(W0,W1,b0,b1,hidden_size,sparse_rate,sparse_weight,decay_weight,Input_data)
+
+grad0 = reduce(lambda x,y: x+y,[list(np.ravel(x)) for x in [W0grad, b0grad, W1grad, b1grad] ])
+
+compare = np.array([grad,grad0]).T
+

@@ -12,7 +12,7 @@ import itertools
 
 import Cost
 import Transfer
-from Utils import init_random_uniform, getfree, setfree, None2Blank
+from Utils import init_random_uniform, getfree, setfree, None2Blank, listify
 
 class Affine(object):
     """
@@ -215,7 +215,10 @@ class TransferLayer(object):
         """        
         start_num = np.cumsum([0] + block_sizes[:-1])
         blocks = [list(n+range(size)) for n,size in zip(start_num, block_sizes)]       
-        
+        if type(transfers) == str:
+            transfers = [transfers]
+        if len(transfers) == 1:
+            transfers = transfers * len(blocks)        
         return cls(blocks,transfers)     
         
     def feed_forward(self,data_in):
@@ -350,16 +353,24 @@ class Layer(object):
         self.TransferLayer = TransferLayer
         self.Costs = Costs
         self.id = layer_id
+        
+        self.num_free = 0.
+        self.num_free_list = []
+        for affine in self.AffineLayer.affines:
+            num_w = np.sum(np.ones_like(affine.w_mat)*affine.w_free)
+            num_b = np.sum(np.ones_like(affine.b_vec)*affine.b_free)
+            self.num_free += num_w + num_b
+            self.num_free_list.append((num_w,num_b))
 
     @classmethod
-    def init_by_size(cls, block_sizes_in, block_sizes_out, transfers, cost_params, 
-                     connections = None, complete = False,
+    def init_by_size(cls, block_sizes_in, block_sizes_out, transfers, 
+                     cost_params = None, connections = None, complete = False,
                      mtds = None, w_frees = None, b_frees = None,
                      random_seed = None, layer_id = None):
         affine = AffineLayer.init_by_size(block_sizes_in, block_sizes_out, connections, complete, mtds, w_frees, b_frees, random_seed)
         transfer = TransferLayer.init_by_size(block_sizes_out,transfers)               
         cost_list = []
-        for param in cost_params:    
+        for param in (cost_params or []):    
             param['layer_id'] = layer_id
             if not param.has_key('target_block'):
                 param['target_block'] = affine.blocks_out[param['out_id']]                
@@ -376,10 +387,13 @@ class Layer(object):
         # Inverse of get_free_params
         params = np.array(new_params)
         counter = 0
-        for affine in self.AffineLayer.affines:  
-            num_elems = np.sum(np.ones_like(affine.w_mat)*affine.w_free)
-            setfree(affine.w_mat, affine.w_free, params[counter:counter+num_elems])
-            counter = counter + num_elems      
+        for nums,affine in zip(self.num_free_list, self.AffineLayer.affines):  
+            num_w = nums[0]
+            num_b = nums[1]            
+            setfree(affine.w_mat, affine.w_free, params[counter:counter+num_w])
+            counter = counter + num_w
+            setfree(affine.b_vec, affine.b_free, params[counter:counter+num_b])
+            counter = counter + num_b            
             
     def get_affine_props(self, attr):
         """
@@ -416,21 +430,21 @@ class Layer(object):
         if data_only:
             return data_out
         
-        costs_dict = {}
-        costs_sum = 0.
+        cost_dict = {}
+        cost_sum = 0.
         for cost in self.Costs:
             subcost = cost.compute(self, data_out, **input_target_kwargs)
-            costs_dict[cost.name] = subcost
-            costs_sum += subcost
-        return data_out, costs_sum, costs_dict         
+            cost_dict[cost.name] = subcost
+            cost_sum += subcost
+        return data_out, cost_sum, cost_dict         
 
     def backprop(self,delta,data_in,data_out, ravelled=True, **input_target_kwargs):        
         pre_transfer_data = self.AffineLayer.feed_forward(data_in)                        
         # delta might be a scalar (e.g. 0) or a matrix of the same shape as data_out
-        post_transfer_delta = np.ones(np.shape(data_out))*delta         
+        post_transfer_delta = np.ones(np.shape(data_out))*delta                 
         
         # Add deltas from this layer's cost functions        
-        for cost in self.Costs:
+        for cost in self.Costs:            
             post_transfer_delta[:,self.TransferLayer.blocks[cost.out_id]] += cost.delta(self, data_out, **input_target_kwargs)
 
         # Backprop through the Transfer layer
@@ -462,3 +476,120 @@ class Layer(object):
             return prev_delta, ravelled_grads
 
         return prev_delta, deriv_w, deriv_b
+
+class Net(object):
+    def __init__(self, Layers):
+        self.num_layers = len(Layers)
+        self.Layers = Layers
+
+        self.num_free_list = []
+        for layer in self.Layers:       
+            self.num_free_list.append(layer.num_free)
+
+    @classmethod
+    def init_by_size(cls, block_sizes, transfers, 
+                     cost_params = None, connections = None, complete = False,
+                     mtds = None, w_frees = None, b_frees = None,
+                     random_seed = None):
+        num_layers = len(block_sizes) - 1
+        block_sizes_in_list = block_sizes[:-1]
+        block_sizes_out_list = block_sizes[1:]
+        cost_params_list = listify(cost_params,num_layers)
+        transfers_list = listify(transfers, num_layers)
+        connections_list = listify(connections, num_layers)
+        complete_list = listify(complete, num_layers)
+        mtds_list = listify(mtds, num_layers)
+        w_frees_list = listify(w_frees, num_layers)
+        b_frees_list = listify(b_frees, num_layers)
+        layer_id_list = range(num_layers)
+        random_seed_list = listify(random_seed,num_layers)
+
+        keys_list = ['block_sizes_in','block_sizes_out','transfers', 
+            'cost_params','connections', 'complete', 
+            'mtds', 'w_frees','b_frees',
+            'random_seed','layer_id']
+        layers = []
+        for vals_list in zip(block_sizes_in_list, block_sizes_out_list, transfers_list, 
+            cost_params_list, connections_list, complete_list, 
+            mtds_list, w_frees_list, b_frees_list,
+            random_seed_list, layer_id_list):
+            
+            layer_kwargs = {key:val for key,val in zip(keys_list,vals_list)}
+            layers.append(Layer.init_by_size(**layer_kwargs))
+
+        return cls(layers)
+
+    def get_free_params(self, ):
+        # only get free portion of parameters, in a flattened list            
+        ravelled_params = []
+        for layer in self.Layers:            
+            ravelled_params += layer.get_free_params()
+        return np.array(ravelled_params)
+    def set_free_params(self, new_params):
+        # Inverse of get_free_params
+        params = np.array(new_params)
+        counter = 0
+        for num, layer in zip(self.num_free_list, self.Layers):
+            layer.set_free_params(params[counter:counter+num])
+            counter = counter + num         
+
+    def costgrad(self, Input_data, Target_data, Input_mask = None, Target_mask = None, cost_only = False):
+        input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        
+        # Feed forward to compute cost
+        data_list = [None]*(self.num_layers + 1)
+        total_cost= 0        
+
+        data_list[0] = Input_data        
+        for i in range(self.num_layers):
+            data_out, cost_sum, cost_dict = self.Layers[i].feed_forward(data_list[i], data_only = False, **input_target_kwargs)
+            data_list[i+1] = data_out                        
+            total_cost += cost_sum
+
+        if cost_only:
+            return total_cost
+
+        # Backpropagate to compute grads        
+        delta = 0.
+        ravelled_grads = []
+        for i in range(self.num_layers - 1, -1 , -1):            
+            delta, layer_grads = self.Layers[i].backprop(delta, data_list[i], data_list[i+1], **input_target_kwargs)            
+            ravelled_grads = layer_grads + ravelled_grads
+
+        return total_cost, ravelled_grads      
+
+    def feed_forward(self, Input_data, Target_data = None, Input_mask = None, Target_mask = None):
+        input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        
+        data_list = [None]*(self.num_layers + 1)
+        data_list[0] = Input_data        
+        for i in range(self.num_layers):
+            data_list[i+1] = self.Layers[i].feed_forward(data_list[i], data_only = True, **input_target_kwargs)
+        return data_list
+
+    def predict(self, Input_data, Target_data = None, Input_mask = None, Target_mask = None):
+        input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        data = Input_data
+        for layer in self.Layers:
+            data = layer.feed_forward(data,data_only=True,**input_target_kwargs)
+        return data
+    
+    def score(self, Input_data, Target_data, score_func = 'MSE', Input_mask = None, Target_mask = None):
+        input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        prediction = self.predict(**input_target_kwargs)
+        f = Cost.assign(score_func)
+        return f(prediction, **input_target_kwargs)
+
+    def cost_breakdown(self, Input_data, Target_data, Input_mask = None, Target_mask = None):
+        input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        
+        # Feed forward to compute cost        
+        final_cost_dict= {}
+        data = Input_data
+
+        for layer in self.Layers:
+            data, cost_sum, cost_dict = layer.feed_forward(data, data_only = False, **input_target_kwargs)
+            final_cost_dict.update(cost_dict)            
+
+        return final_cost_dict
+

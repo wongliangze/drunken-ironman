@@ -95,5 +95,9 @@ def init_random_uniform(size_in,size_out,random_seed=None):
 # STRING PROCESSING FUNCTIONS
 def None2Blank(inlist):
     return [('' if elm is None else elm) for elm in inlist]
-    
+
+def listify(item, num):
+    if type(item) is not list:
+        return [item]*num
+    return item  
 
