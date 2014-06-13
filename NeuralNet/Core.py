@@ -8,11 +8,12 @@ Created on Mon Jun 09 15:42:40 2014
 from __future__ import division
 import numpy as np
 import itertools
-
+import time
+from scipy.optimize import fmin_l_bfgs_b as minimize
 
 import Cost
 import Transfer
-from Utils import init_random_uniform, getfree, setfree, None2Blank, listify
+import Utils
 
 class Affine(object):
     """
@@ -50,7 +51,7 @@ class Affine(object):
                 Initialization method. 'rand_w' or 'zeros'. Defaults to 'rand_w', which sets b = 0, w = random.
         """
         if mtd == "rand_w":        
-            w_mat = init_random_uniform(size_in,size_out,random_seed)
+            w_mat = Utils.init_random_uniform(size_in,size_out,random_seed)
         elif mtd == "zeros":
             w_mat = np.zeros((size_in,size_out))    
         else:
@@ -254,7 +255,7 @@ class CostWrapper(object):
             Additional parameters for cost functiob (e.g. sparse rate)
     """
     def __init__(self, name, weight = 1., layer_id = None, in_id = None, out_id = None, input_block = None, target_block = None, xparams = None):        
-        self.name = '{}.{}.{} {}'.format(*None2Blank([layer_id, in_id, out_id, name]))
+        self.name = '{}.{}:{} {}'.format(*Utils.None2Blank([layer_id, in_id, out_id, name]))
         self.func = Cost.assign(name)
         self.type = self.func.type        
         
@@ -381,7 +382,7 @@ class Layer(object):
         # only get free portion of parameters, in a flattened list            
         ravelled_params = []
         for affine in self.AffineLayer.affines:            
-            ravelled_params += getfree(affine.w_mat,affine.w_free) + getfree(affine.b_vec,affine.b_free)                      
+            ravelled_params += Utils.getfree(affine.w_mat,affine.w_free) + Utils.getfree(affine.b_vec,affine.b_free)                      
         return ravelled_params
     def set_free_params(self, new_params):
         # Inverse of get_free_params
@@ -390,9 +391,9 @@ class Layer(object):
         for nums,affine in zip(self.num_free_list, self.AffineLayer.affines):  
             num_w = nums[0]
             num_b = nums[1]            
-            setfree(affine.w_mat, affine.w_free, params[counter:counter+num_w])
+            Utils.setfree(affine.w_mat, affine.w_free, params[counter:counter+num_w])
             counter = counter + num_w
-            setfree(affine.b_vec, affine.b_free, params[counter:counter+num_b])
+            Utils.setfree(affine.b_vec, affine.b_free, params[counter:counter+num_b])
             counter = counter + num_b            
             
     def get_affine_props(self, attr):
@@ -472,7 +473,7 @@ class Layer(object):
         if ravelled:
             ravelled_grads = []            
             for affine, dw, db in zip(self.AffineLayer.affines,deriv_w,deriv_b):
-                ravelled_grads += getfree(dw,affine.w_free) + getfree(db,affine.b_free)             
+                ravelled_grads += Utils.getfree(dw,affine.w_free) + Utils.getfree(db,affine.b_free)             
             return prev_delta, ravelled_grads
 
         return prev_delta, deriv_w, deriv_b
@@ -494,15 +495,15 @@ class Net(object):
         num_layers = len(block_sizes) - 1
         block_sizes_in_list = block_sizes[:-1]
         block_sizes_out_list = block_sizes[1:]
-        cost_params_list = listify(cost_params,num_layers)
-        transfers_list = listify(transfers, num_layers)
-        connections_list = listify(connections, num_layers)
-        complete_list = listify(complete, num_layers)
-        mtds_list = listify(mtds, num_layers)
-        w_frees_list = listify(w_frees, num_layers)
-        b_frees_list = listify(b_frees, num_layers)
+        cost_params_list = Utils.listify(cost_params,num_layers)
+        transfers_list = Utils.listify(transfers, num_layers)
+        connections_list = Utils.listify(connections, num_layers)
+        complete_list = Utils.listify(complete, num_layers)
+        mtds_list = Utils.listify(mtds, num_layers)
+        w_frees_list = Utils.listify(w_frees, num_layers)
+        b_frees_list = Utils.listify(b_frees, num_layers)
         layer_id_list = range(num_layers)
-        random_seed_list = listify(random_seed,num_layers)
+        random_seed_list = Utils.listify(random_seed,num_layers)
 
         keys_list = ['block_sizes_in','block_sizes_out','transfers', 
             'cost_params','connections', 'complete', 
@@ -533,9 +534,11 @@ class Net(object):
             layer.set_free_params(params[counter:counter+num])
             counter = counter + num         
 
-    def costgrad(self, Input_data, Target_data, Input_mask = None, Target_mask = None, cost_only = False):
+    def costgrad(self, new_params, Input_data, Target_data, Input_mask, Target_mask, cost_only):       
+        if new_params is not None:
+            self.set_free_params(new_params)
+            
         input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
-        
         # Feed forward to compute cost
         data_list = [None]*(self.num_layers + 1)
         total_cost= 0        
@@ -556,7 +559,7 @@ class Net(object):
             delta, layer_grads = self.Layers[i].backprop(delta, data_list[i], data_list[i+1], **input_target_kwargs)            
             ravelled_grads = layer_grads + ravelled_grads
 
-        return total_cost, ravelled_grads      
+        return total_cost, np.array(ravelled_grads)
 
     def feed_forward(self, Input_data, Target_data = None, Input_mask = None, Target_mask = None):
         input_target_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
@@ -592,4 +595,84 @@ class Net(object):
             final_cost_dict.update(cost_dict)            
 
         return final_cost_dict
+    
+    def fit(self, Input_data, Target_data, 
+            Input_mask = None, Target_mask = None, 
+            Test_data = None, Test_target = None, Test_data_mask = None, Test_target_mask = None, score_func = 'MSE',
+            factr = 1e7, save_iters = 20, total_iters = 100,            
+            save_name = 'MyNet.p', progress_list = [] ):
 
+        new_params = self.get_free_params()
+        costgrad_args = (Input_data, Target_data, Input_mask, Target_mask, False)
+
+        num_cycles = int(total_iters/save_iters)+1    
+        
+        print "Fitting..."
+        print "{: <10}{: <20}{: <20}{: <20}".format('Epoch', 'Time', 'Cost', 'Score')        
+        
+        # Progress indicators
+        total_time = 0.
+        total_epochs = 0.
+        if len(progress_list)>0:
+            latest = progress_list[-1]
+            total_time = latest['time']
+            total_epochs = latest['epoch']
+            
+        cost = self.costgrad(None,Input_data, Target_data, Input_mask, Target_mask, True)
+        if Test_data is not None:
+            score_kwargs = {'Input_data': Test_data, 'Input_mask': Test_data_mask, 'Target_data': Test_target, 'Target_mask':Test_target_mask, 'score_func':score_func}
+            score = self.score(**score_kwargs)
+        else:
+            score = np.nan
+        breakdown_kwargs = {'Input_data': Input_data, 'Input_mask': Input_mask, 'Target_data': Target_data, 'Target_mask':Target_mask}
+        breakdown = self.cost_breakdown(**breakdown_kwargs)            
+        
+        converged = False
+        
+        
+        print "{: <10}{: <20}{: <20}{: <20}".format(total_epochs, total_time, cost, score)
+        if len(progress_list) == 0:
+            breakdown.update({'cost':cost, 'score':score, 'epoch':total_time, 'time':total_epochs})
+            progress_list.append(breakdown)
+        for _ in xrange(num_cycles):                             
+            # Compute new params and cost
+            t = time.time()               
+            new_params,cost,messages = minimize(self.costgrad,new_params,args=costgrad_args, maxfun=save_iters, factr=factr)                
+            total_time += time.time() - t
+            total_epochs += save_iters
+            self.set_free_params(new_params)
+            # Save net
+            Utils.save_net(self, save_name)
+
+            # Evaluate scoring and cost breakdown 
+            if Test_data is not None:
+                score = self.score(**score_kwargs)            
+            breakdown = self.cost_breakdown(**breakdown_kwargs)
+                        
+            # Print and append to list
+            print "{: <10}{: <20}{: <20}{: <20}".format(total_epochs, total_time, cost, score)
+            breakdown.update({'cost':cost, 'score':score, 'epoch': total_epochs, 'time':total_time})
+            progress_list.append(breakdown)
+
+            if messages['warnflag']==0:
+                converged = True                
+                break                
+
+        if converged:
+            print "Converged!"
+        else:
+            print "Maximum iterations reached."
+
+        return progress_list
+
+    def testgrad(self, Input_data, Target_data, Input_mask = None, Target_mask = None):
+        theta = self.get_free_params()                
+        J = lambda x: self.costgrad(x, Input_data, Target_data, Input_mask, Target_mask, True)
+        numgrad = Utils.computeNumericalGradient(J,theta)
+        cost,grad = self.costgrad(None,Input_data, Target_data, Input_mask, Target_mask, False)
+        print 'Relative diff (numgrad vs costgrad): {}'.format(Utils.compare(numgrad,grad))
+        return Utils.compare(numgrad,grad)
+        
+        
+               
+        

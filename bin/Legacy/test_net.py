@@ -34,10 +34,10 @@ costs1 = [
 net = Core.Net.init_by_size([[visible_size],[hidden_size],[visible_size]],'logistic',[costs0, costs1])
 
 cost_dict = net.cost_breakdown(Input_data, Target_data)
-cost,grad = net.costgrad(Input_data,Target_data, cost_only=False)
+cost,grad = net.costgrad(None,Input_data,Target_data, cost_only=False)
 
 params = net.get_free_params()
-net.set_free_params(params*0)
+net.costgrad(params*0,Input_data,Target_data, cost_only=False)
 new_params = net.get_free_params()
 
 
